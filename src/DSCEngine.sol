@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.18;
 import {DecentralizedStableCoin} from "./DecentralizedStableCoin.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 /**
  * @title DSCEngine
@@ -25,13 +26,14 @@ contract DSCEngine {
     //////////////////////////////////////////
     error DSCEngine__NeedMoreThanZero();
     error DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
+    error DSCEngine__NotAllowedToken();
 
     ///////////////////////////////////////////
     /////       State Varibles     ///////////
     //////////////////////////////////////////
     mapping(address token => address priceFeed) private s_priceFeeds; // tokenToPriceFeed
 
-    DecentralizedStableCoin private i_dsc;
+    DecentralizedStableCoin private immutable i_dsc;
 
     ///////////////////////////////////////////
     //////////        Modifier     ///////////
@@ -44,6 +46,9 @@ contract DSCEngine {
     }
 
     modifier isAllowedToken(address token) {
+        if (s_priceFeeds[token] == address(0)) {
+            revert DSCEngine__NotAllowedToken();
+        }
         _;
     }
 
@@ -63,6 +68,7 @@ contract DSCEngine {
         for (uint256 i = 0; i < tokenAddresses.length; i++) {
             s_priceFeeds[tokenAddresses[i]] = priceFeedAddresses[i];
         }
+        i_dsc = DecentralizedStableCoin(dscAddress);
     }
 
     ////////////////////////////////////
@@ -79,5 +85,10 @@ contract DSCEngine {
     function depositCollateral(
         address tokenCollateralAddress,
         uint256 amountCollateral
-    ) external moreThanZero(amountCollateral) {}
+    )
+        external
+        moreThanZero(amountCollateral)
+        isAllowedToken(tokenCollateralAddress)
+        nonReentrant
+    {}
 }
