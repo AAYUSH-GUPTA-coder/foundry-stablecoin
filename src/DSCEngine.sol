@@ -2,10 +2,11 @@
 pragma solidity 0.8.18;
 import {DecentralizedStableCoin} from "./DecentralizedStableCoin.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title DSCEngine
- * @author Patrick Collins
+ * @author Aayush Gupta
  * @notice The system is designed to be as minimal as possible and have the tokens maintain a 1 token == $1 peg.
  * This stablecoin has the properties:
  * - Exogenious Collateral
@@ -20,20 +21,28 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.
  *
  * @notice This contract is Very lossely basedon the MakerDAO DSS (DAI) system
  */
-contract DSCEngine {
+contract DSCEngine is ReentrancyGuard {
     ///////////////////////////////////////////
-    //////////        Erros     //////////////
+    //////////        Errors     //////////////
     //////////////////////////////////////////
     error DSCEngine__NeedMoreThanZero();
     error DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
     error DSCEngine__NotAllowedToken();
+    error DSCEngine__TransferFailed();
 
     ///////////////////////////////////////////
     /////       State Varibles     ///////////
     //////////////////////////////////////////
     mapping(address token => address priceFeed) private s_priceFeeds; // tokenToPriceFeed
+    mapping(address user => mapping(address => uint256 amount))
+        private s_collateralDeposited;
 
     DecentralizedStableCoin private immutable i_dsc;
+
+    ///////////////////////////////////////////
+    ///////       Events           ///////////
+    //////////////////////////////////////////
+    event CollateralDeposited(address indexed user, address indexed token, uint amount);
 
     ///////////////////////////////////////////
     //////////        Modifier     ///////////
@@ -81,6 +90,7 @@ contract DSCEngine {
      * @notice Function to depoist collateral to the protocol
      * @param tokenCollateralAddress The address of the token to deposit as collateral
      * @param amountCollateral The amount of collateral to deposit
+     * @dev if msg.sender don't have balance then the whole transcation will revert including the updated s_collateralDeposited values.
      */
     function depositCollateral(
         address tokenCollateralAddress,
@@ -90,5 +100,12 @@ contract DSCEngine {
         moreThanZero(amountCollateral)
         isAllowedToken(tokenCollateralAddress)
         nonReentrant
-    {}
+    {
+        s_collateralDeposited[msg.sender][tokenCollateralAddress] += amountCollateral;
+        emit CollateralDeposited(msg.sender, tokenCollateralAddress, amountCollateral);
+        bool success = IERC20(tokenCollateralAddress).transferFrom(msg.sender, address(this), amountCollateral);
+        if (!success){
+            revert DSCEngine__TransferFailed();
+        }
+    }
 }
