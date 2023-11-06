@@ -34,8 +34,10 @@ contract DSCEngine is ReentrancyGuard {
     /////       State Varibles     ///////////
     //////////////////////////////////////////
     mapping(address token => address priceFeed) private s_priceFeeds; // tokenToPriceFeed
-    mapping(address user => mapping(address => uint256 amount))
-        private s_collateralDeposited;
+    mapping(address user => mapping(address => uint256 amount)) private s_collateralDeposited;
+    mapping(address user => uint256 amountDscMinted) private s_DSCMinted;
+    address[] private s_collateralTokens;
+    
 
     DecentralizedStableCoin private immutable i_dsc;
 
@@ -76,6 +78,7 @@ contract DSCEngine is ReentrancyGuard {
         // The basic idea behind this is that if the Token has price feed for USD pairs like BTC/USD and ETH/USD, those tokens are allowed; otherwise, they are NOT allowed.
         for (uint256 i = 0; i < tokenAddresses.length; i++) {
             s_priceFeeds[tokenAddresses[i]] = priceFeedAddresses[i];
+            s_collateralTokens.push(tokenAddresses[i]);
         }
         i_dsc = DecentralizedStableCoin(dscAddress);
     }
@@ -108,4 +111,58 @@ contract DSCEngine is ReentrancyGuard {
             revert DSCEngine__TransferFailed();
         }
     }
+
+    /**
+     * @dev The must have more collateral value than the threshold
+     * @param amountDscToMint The amount of decentralized stablecoin to mint
+     */
+    function mintDsc(uint amountDscToMint) external moreThanZero(amountDscToMint) ReentrancyGuard {
+        s_DSCMinted[msg.sender] += amountDscMinted;
+        // revert if they minted too much ($150 DSC, $100 ETH)
+        revertIfHealthFactorIsBroken(msg.sender);
+    }
+
+    //////////////////////////////////////////////////
+    ///////  Private & Internal Functions     ////////
+    //////////////////////////////////////////////////
+
+    function _getAccoutInformation(address user) private view returns(uint256 totalDscMinted, uint256 collateralValueInUsd) {
+        totalDscMinted = s_DSCMinted[user];
+        collateralValueInUsd = getAccountCollateralValue(user);
+    }
+
+    /**
+     * @notice Returns how close to liquidate a user is
+     * @dev if a user is below 1, then they can get liquidated
+     * @param user address of the user
+     */
+    function _healthFactor(address user) private view returns(uint256) {
+        // total DSC minted
+        // total collateral VALUE
+        (uint256 totalDscMinted, uint256 collateralValueInUsd) = _getAccoutInformation(user);
+    }
+
+    function _revertIfHealthFactorIsBroken(address user) internal view {
+        // 1. check health factor (do they have enough collateral)
+        // 2. Revert if they don't have a good health factor
+    }
+
+    //////////////////////////////////////////////////////
+    ///////  Public & External view Functions     ////////
+    //////////////////////////////////////////////////////
+
+    function getAccountCollateralValue(address user) public view returns(uint256){
+        // loop through each collateral token, get the amount they have depoisted, and map 
+        //it to the price, to get the USD Value
+        for(uint256 i=0; i< s_collateralTokens.length; i++){
+            address token = s_collateralTokens[i];
+            uint256 amount = s_collateralDeposited[user][token];
+            totalCollateralValueInUsd +=
+        }
+    }
+
+    function getUsdValue(address token, uint256 amount) public view returns(uint256){
+        
+    }
+
 }
