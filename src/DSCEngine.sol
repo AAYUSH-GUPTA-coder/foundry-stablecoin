@@ -59,6 +59,12 @@ contract DSCEngine is ReentrancyGuard {
         uint amount
     );
 
+    event CollateralRedeemed(
+        address user,
+        uint256 amountCollateral,
+        address tokenCollateralAddress
+    );
+
     ///////////////////////////////////////////
     //////////        Modifier     ///////////
     //////////////////////////////////////////
@@ -100,7 +106,20 @@ contract DSCEngine is ReentrancyGuard {
     ///  Exteranl Functions     ////////
     ///////////////////////////////////
 
-    function depositCollateralAndMintDisc() external {}
+    /**
+     * @notice function to deposit collateral and mint DSC token in one transaction
+     * @param tokenCollateral The address of the token to deposit as collateral
+     * @param amountColateral The amount of collateral to deposit
+     * @param amountDscToMint The amount of decentralized stablecoin to mint
+     */
+    function depositCollateralAndMintDisc(
+        address tokenCollateral,
+        uint256 amountColateral,
+        uint256 amountDscToMint
+    ) external {
+        depositCollateral(tokenCollateral, amountColateral);
+        mintDsc(amountDscToMint);
+    }
 
     /**
      * @notice Function to depoist collateral to the protocol
@@ -112,7 +131,7 @@ contract DSCEngine is ReentrancyGuard {
         address tokenCollateralAddress,
         uint256 amountCollateral
     )
-        external
+        public
         moreThanZero(amountCollateral)
         isAllowedToken(tokenCollateralAddress)
         nonReentrant
@@ -135,13 +154,41 @@ contract DSCEngine is ReentrancyGuard {
         }
     }
 
+    function redeemCollateralForDsc(address tokenCollateralAddress, uint256 amountCollateral, uint256 amountDscToBurn) external {
+        burnDsc(amountDscToBurn);
+        redeemCollateral(tokenCollateralAddress, amountCollateral);
+    }
+
+    // in order to redeem collateral
+    // 1. Health factor must be over 1 AFTER collateral pulled
+    // DRY : Don't Repeat Yourself
+    // CEI : Check, Effects, Interactions
+    function redeemCollateral(
+        address tokenCollateralAddress,
+        uint256 amountCollateral
+    ) public moreThanZero(amountCollateral) nonReentrant {
+        s_collateralDeposited[msg.sender][
+            tokenCollateralAddress
+        ] -= amountCollateral;
+        emit CollateralRedeemed(
+            msg.sender,
+            amountCollateral,
+            tokenCollateralAddress
+        );
+        bool success = IERC20(tokenCollateralAddress).transfer(msg.sender, amountCollateral);
+        if(!success){
+            revert DSCEngine__TransferFailed();
+        }
+        _revertIfHealthFactorIsBroken(msg.sender);
+    }
+
     /**
      * @dev The must have more collateral value than the threshold
      * @param amountDscToMint The amount of decentralized stablecoin to mint
      */
     function mintDsc(
         uint amountDscToMint
-    ) external moreThanZero(amountDscToMint) nonReentrant {
+    ) public moreThanZero(amountDscToMint) nonReentrant {
         s_DSCMinted[msg.sender] += amountDscToMint;
         // revert if they minted too much ($150 DSC, $100 ETH)
         _revertIfHealthFactorIsBroken(msg.sender);
@@ -149,6 +196,16 @@ contract DSCEngine is ReentrancyGuard {
         if (!minted) {
             revert DSCEngine__MintFailed();
         }
+    }
+
+    function burnDsc(uint256 amount) public moreThanZero(amount){
+        s_DSCMinted[msg.sender] -= amount;
+        bool success = i_dsc.transferFrom(msg.sender, address(this), amount);
+        if(!success){
+            revert DSCEngine__TransferFailed();
+        }
+        i_dsc.burn(amount);
+        _revertIfHealthFactorIsBroken(msg.sender); // I don't think this would ever hit...
     }
 
     //////////////////////////////////////////////////
