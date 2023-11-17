@@ -33,6 +33,7 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__BreaksHealthFactor(uint userHealthFactor);
     error DSCEngine__MintFailed();
     error DSCEngine__HealthFactorOk();
+    error DSCEngine__HealthFactorNotImproved();
 
     ///////////////////////////////////////////
     /////       State Varibles     ///////////
@@ -177,7 +178,7 @@ contract DSCEngine is ReentrancyGuard {
         address tokenCollateralAddress,
         uint256 amountCollateral
     ) public moreThanZero(amountCollateral) nonReentrant {
-       _redeemCollateral(tokenCollateralAddress, amountCollateral, msg.sender,msg.sender);
+       _redeemCollateral(msg.sender,msg.sender, tokenCollateralAddress, amountCollateral );
        _revertIfHealthFactorIsBroken(msg.sender);
     }
 
@@ -198,12 +199,7 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     function burnDsc(uint256 amount) public moreThanZero(amount){
-        s_DSCMinted[msg.sender] -= amount;
-        bool success = i_dsc.transferFrom(msg.sender, address(this), amount);
-        if(!success){
-            revert DSCEngine__TransferFailed();
-        }
-        i_dsc.burn(amount);
+        _burnDsc(amount, msg.sender, msg.sender);
         _revertIfHealthFactorIsBroken(msg.sender); // I don't think this would ever hit...
     }
 
@@ -250,7 +246,15 @@ contract DSCEngine is ReentrancyGuard {
         uint256 bonusCollateral = (tokenAmountFromDebtCovered * LIQUIDATION_BONUS) / LIQUIDATION_BONUS;
 
         uint256 totalCollateralToRedeem = tokenAmountFromDebtCovered + bonusCollateral;
-        _redeemCollateral(collateral,totalCollateralToRedeem, user, msg.sender);
+        _redeemCollateral(user, msg.sender, collateral,totalCollateralToRedeem);
+        // We need to burn the DSC
+        _burnDsc(debtToCover, user, msg.sender);
+
+        uint256 endingUserHealthFactor = _healthFactor(user);
+        if(endingUserHealthFactor <= startingUserHealthFactor){
+            revert DSCEngine__HealthFactorNotImproved();
+        }
+        _revertIfHealthFactorIsBroken(msg.sender);
     }
 
     //////////////////////////////////////////////////
@@ -258,7 +262,7 @@ contract DSCEngine is ReentrancyGuard {
     //////////////////////////////////////////////////
 
     /**
-     * @dev Low-Level internal function, do not call unless the function calling it is chceking for health factors being broken
+     * @dev Low-Level internal function, do not call unless the function calling it is checking for health factors being broken
      */
     function _burnDsc(uint256 amountDscToBurn, address onBehalfOf, address dscFrom) private {
         s_DSCMinted[onBehalfOf] -= amountDscToBurn;
@@ -270,7 +274,7 @@ contract DSCEngine is ReentrancyGuard {
     }
 
 
-    function _redeemCollateral(address tokenCollateralAddress, uint256 amountCollateral, address from, address to) private {
+    function _redeemCollateral(address from, address to, address tokenCollateralAddress, uint256 amountCollateral ) private {
          s_collateralDeposited[from][
             tokenCollateralAddress
         ] -= amountCollateral;
@@ -311,6 +315,7 @@ contract DSCEngine is ReentrancyGuard {
             uint256 totalDscMinted,
             uint256 collateralValueInUsd
         ) = _getAccoutInformation(user);
+        // (100 * 50) / 100 = 50
         uint256 collateralAdjustedForThreshold = (collateralValueInUsd *
             LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
         // 1000 ETH / 100 DSC
@@ -318,6 +323,8 @@ contract DSCEngine is ReentrancyGuard {
 
         // $ 150 ETH  / 100 DSC = 1.5
         // 150 * 50 = 7500 / 100 = (75 / 100) < 1
+
+        // (50 * 1e18) / 50
         return (collateralAdjustedForThreshold * PRECISION) / totalDscMinted;
     }
 
