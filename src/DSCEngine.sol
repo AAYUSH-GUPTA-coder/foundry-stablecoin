@@ -154,9 +154,16 @@ contract DSCEngine is ReentrancyGuard {
         }
     }
 
+    /**
+     * @notice This function burn DSC and redeem undelying collateral in one transcation
+     * @param tokenCollateralAddress The address of the token to redeem 
+     * @param amountCollateral The amount of collateral to redeem
+     * @param amountDscToBurn The amount of DSC token to burn
+     */
     function redeemCollateralForDsc(address tokenCollateralAddress, uint256 amountCollateral, uint256 amountDscToBurn) external {
         burnDsc(amountDscToBurn);
         redeemCollateral(tokenCollateralAddress, amountCollateral);
+        // redeemCollateral already checks health factor
     }
 
     // in order to redeem collateral
@@ -208,6 +215,33 @@ contract DSCEngine is ReentrancyGuard {
         _revertIfHealthFactorIsBroken(msg.sender); // I don't think this would ever hit...
     }
 
+    // WE NEED to liquidate positions when undercollateralized
+    
+    // $100 ETH backing $50 DSC ✅ This will work (our threshold)
+    // $20 ETH backing $50 DSC ❌ this will NOT work
+
+    // we need someone to liquidate the position
+    // $75 ETH backing $50 DSC (below our threshold)
+    // Liquidator takes $75 worth of ETH backing and burns off the $50 DSC
+
+    // If someone is almost undercollaterlized, we will pay you to liquidate them!
+    /**
+     * @notice You can partially liquidate a user
+     * @notice You wil get a liquidate bonus for taking the user funds
+     * @dev This function working assumes the protocol will be roughly 200% overcollateralized in order for this to work
+     * @notice A known bug would be if the protocol were 100% or less collaterlized, then we wouldn't be able to incentive the liquidators.
+     * For example, if the price of the collateral plummeted before anoyine could be liquidated.
+     * 
+     * @param collateral The address of the token to liquidate from the user
+     * @param user address of the user who brokes the health factor
+     * @param debtToCover The maount of DSC you want to burn to improve the users health factor
+     * @dev User health factor should be below MIN_HEALTH_FACTOR
+     */
+    function liquidate(address collateral, address user, uint256 debtToCover) external moreThanZero(debtToCover) nonReentrant{
+        // need to check health factor of the user
+        uint256 startingUserHealthFactor = _healthFactor(user);
+    }
+
     //////////////////////////////////////////////////
     ///////  Private & Internal Functions     ////////
     //////////////////////////////////////////////////
@@ -253,6 +287,8 @@ contract DSCEngine is ReentrancyGuard {
             revert DSCEngine__BreaksHealthFactor(userHealthFactor);
         }
     }
+
+    
 
     //////////////////////////////////////////////////////
     ///////  Public & External view Functions     ////////
