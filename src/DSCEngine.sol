@@ -343,7 +343,11 @@ contract DSCEngine is ReentrancyGuard {
     ///////  Public & External VIEW Functions     ////////
     //////////////////////////////////////////////////////
 
-    
+    /**
+     * @notice function to get the USD in ETH for example $1000 USD == 0.5 ETH 
+     * @param token The address of the token
+     * @param usdAmountInWei Value of USD in wei, 1e18
+     */
     function getTokenAmountFromUsd(address token, uint256 usdAmountInWei) public view returns(uint256){
         // price of ETH (token)
         // $2000/ETH = $1000 = 0.5 ETH
@@ -379,5 +383,9 @@ contract DSCEngine is ReentrancyGuard {
         // the returned value from CL will be 1000 * 1e8
         return
             ((uint256(price) * ADDITIONAL_FEED_PRECISION) * amount) / PRECISION;
+    }
+
+    function getAccountInformation(address user) external view returns(uint256 totalDscMinted, uint256 collateralValueInUsd){
+        (totalDscMinted, collateralValueInUsd) = _getAccoutInformation(user);
     }
 }
